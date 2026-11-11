@@ -14,7 +14,7 @@ OUT = ROOT / "out"
 # --- output -----------------------------------------------------------------
 WIDTH, HEIGHT = 1080, 1350        # 4:5 portrait, the Instagram feed/reel format
 FPS = 30
-SUPERSAMPLE = 3                   # render at 3x and average: clean edges
+SUPERSAMPLE = 4                   # render at 4x and average: clean edges, no shimmer
 CRF = 17                          # x264 quality (lower = better, bigger)
 
 # --- timeline (seconds) -----------------------------------------------------
@@ -25,7 +25,7 @@ T_PER_YEAR = 0.52                 # 1986 ... 2023
 T_REVEAL = 1.6                    # undated buildings appear in grey
 T_HOLD = 3.4                      # final hold
 RISE = 0.45                       # seconds a building takes to grow
-FLASH = 0.55                      # e-folding time of the "new building" glow
+FLASH = 0.45                      # e-folding time of the "new building" glow
 LIFE = 3.5                        # after this a building is static (baked)
 
 # --- camera -----------------------------------------------------------------
@@ -33,14 +33,14 @@ LIFE = 3.5                        # after this a building is static (baked)
 # elevation = degrees above the horizon; distance in metres; fov vertical.
 # The shot eases from CAMERA_START to CAMERA_END over the whole clip. Make the
 # two identical for a locked-off camera (renders ~3x faster).
-CAMERA_START = dict(target=(-1200.0, -8200.0, 3900.0), azimuth=3.0, elevation=48.0,
-                    distance=92000.0, fov=22.0)
-CAMERA_END = dict(target=(-2700.0, -10200.0, 3900.0), azimuth=-2.0, elevation=45.0,
-                  distance=106000.0, fov=22.0)
+CAMERA_START = dict(target=(-1700.0, -8400.0, 3900.0), azimuth=3.0, elevation=48.0,
+                    distance=95000.0, fov=22.0)
+CAMERA_END = dict(target=(-3400.0, -10400.0, 3900.0), azimuth=-2.0, elevation=45.0,
+                  distance=108000.0, fov=22.0)
 
 Z_REF = 3600.0                    # metres a.s.l. that become z = 0
 TERRAIN_EXAGGERATION = 1.7
-BUILDING_EXAGGERATION = 6.0       # buildings are tiny at 30 km across - let them stand
+BUILDING_EXAGGERATION = 9.0       # buildings are tiny at 30 km across - let them stand
 MIN_BUILDING_PX = 1.6             # footprints are widened to at least this (supersampled px)
 SKIRT = 8.0                       # walls reach this far below ground (hides gaps on slopes)
 
@@ -75,18 +75,26 @@ RAMP = [
 FLASH_COLOR = "#fff4dc"
 FLASH_MIX = 0.9                   # how far a brand-new building is pushed towards FLASH_COLOR
 UNDATED_COLOR = "#59616b"
-BLOOM = 1.0                       # glow strength of new construction (0 = off)
+BLOOM = 0.8                       # glow strength of new construction (0 = off)
 
 # --- words ------------------------------------------------------------------
 KICKER = "BOLIVIA  ·  1985 – 2023"
 TITLE = "LA PAZ · EL ALTO"
 CHART_LABEL = "BUILDINGS ADDED PER YEAR"
-STOCK_LABEL = "ALREADY STANDING IN 1985"
-NOTE = ("Year = first satellite detection of a settlement at the building's location "
-        "(not cadastral dates) · dark red = standing by 1985 · grey = undated")
+STOCK_LABEL = "AND EARLIER"
+NOTE = ("Year = first satellite detection of a settlement at the building's site, not a "
+        "cadastral date (Landsat 1985–2015, Sentinel-2 2016–23)")
 AUTHOR = ""                       # e.g. "Author: Your Name" - shown bottom left when set
-CREDITS = ("Data: Overture Maps (Google · Microsoft · OSM) · DLR WSF Evolution · "
-           "Google Open Buildings 2.5D · JRC GHSL · Copernicus DEM · ESA WorldCover")
+CREDITS = ("Dark red = standing by 1985 · grey = undated · Data: Overture Maps, DLR WSF Evolution, "
+           "Google Open Buildings 2.5D, JRC GHSL, Copernicus DEM, ESA WorldCover")
+
+# Place labels: (text, lon, lat, offset of the text from its anchor in px at 1080 wide).
+# "{z}" is replaced by the terrain elevation at the anchor, rounded to 10 m.
+LABELS = [
+    ("EL ALTO · {z} m", -68.1940, -16.4870, (-70, -96)),
+    ("LA PAZ · {z} m", -68.1336, -16.4955, (36, -128)),
+    ("ZONA SUR · {z} m", -68.0850, -16.5400, (60, -84)),
+]
 
 TEXT_COLOR = "#e9e6e1"
 TEXT_DIM = "#9aa3ab"

@@ -147,7 +147,7 @@ class Overlay:
 
     # ----------------------------------------------------------------- dynamic
     def frame(self, *, year: int, year_pos: float, count: int, stock_tag: float,
-              undated: int, alpha: float = 1.0) -> np.ndarray:
+              undated: int, alpha: float = 1.0, labels=()) -> np.ndarray:
         """RGBA uint8 overlay for one frame.
 
         year      label shown in the big counter
@@ -155,6 +155,8 @@ class Overlay:
         count     dated buildings standing so far
         stock_tag 0..1 opacity of the "already standing in 1985" tag
         undated   number of undated buildings revealed so far (0 = hide)
+        labels    place labels as (text, x, y, dx, dy, opacity): anchor in pixels,
+                  text offset from it
         """
         k = self.k
         im = self.static.copy()
@@ -195,11 +197,36 @@ class Overlay:
             s = 5 * k
             d.polygon([(xp - s, top - s * 1.2), (xp + s, top - s * 1.2), (xp, top + s * 0.4)],
                       fill=col + (230,))
+        if labels:
+            im = Image.alpha_composite(self._labels(labels), im)
         arr = np.asarray(im, dtype=np.uint8)
         if alpha < 0.999:
             arr = arr.copy()
             arr[..., 3] = (arr[..., 3].astype(np.float32) * alpha).astype(np.uint8)
         return arr
+
+    def _labels(self, labels) -> Image.Image:
+        """Pins with a hairline leader: small, quiet, there for orientation only."""
+        k = self.k
+        lay = Image.new("RGBA", (self.W, self.H), (0, 0, 0, 0))
+        d = ImageDraw.Draw(lay)
+        col = hex_rgb(cfg.TEXT_COLOR)
+        f = font("SemiBold", 13.5 * k)
+        for text, x, y, dx, dy, op in labels:
+            if op <= 0.01:
+                continue
+            tx, ty = x + dx * k, y + dy * k
+            a = int(255 * op)
+            d.line([(x, y), (tx, ty)], fill=col + (int(a * 0.55),), width=max(1, round(k)))
+            r = 2.6 * k
+            d.ellipse([x - r, y - r, x + r, y + r], fill=col + (a,))
+            w = tracked_width(text, f, 2.0 * k)
+            left = tx - w / 2
+            pad = 7 * k
+            d.rounded_rectangle([left - pad, ty - 22 * k, left + w + pad, ty + 1 * k],
+                                radius=4 * k, fill=(8, 12, 16, int(150 * op)))
+            tracked(d, (left, ty - 6 * k), text, f, col + (a,), tracking=2.0 * k)
+        return lay
 
 
 def composite(frame_rgb: np.ndarray, overlay_rgba: np.ndarray) -> np.ndarray:

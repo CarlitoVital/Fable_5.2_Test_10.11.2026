@@ -17,7 +17,6 @@ from __future__ import annotations
 
 import json
 import re
-import sys
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
@@ -157,6 +156,9 @@ def fetch(theme="buildings", type_="building", aoi=C.AOI_BUILDINGS, out=OUT,
     return table
 
 
-if __name__ == "__main__":
+def main():
     fetch()
-    sys.exit(0)
+
+
+if __name__ == "__main__":
+    main()

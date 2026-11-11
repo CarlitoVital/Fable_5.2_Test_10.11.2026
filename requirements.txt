@@ -1,0 +1,16 @@
+# data pipeline
+numpy>=2.0
+scipy>=1.13
+pyarrow>=16
+fsspec>=2024.6
+aiohttp>=3.9
+requests>=2.31
+rasterio>=1.4
+pyproj>=3.6
+shapely>=2.0
+mapbox-earcut>=1.0
+# renderer
+numba>=0.60
+pillow>=10.3
+# tests
+pytest>=8

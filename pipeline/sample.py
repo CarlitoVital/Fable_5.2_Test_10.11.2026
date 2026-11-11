@@ -68,6 +68,9 @@ def load_footprints():
     w, s, e, n = C.AOI_BUILDINGS
     keep &= (lonlat_c[:, 0] > w) & (lonlat_c[:, 0] < e)
     keep &= (lonlat_c[:, 1] > s) & (lonlat_c[:, 1] < n)
+    for bw, bs, be, bn in C.EXCLUDE_BOXES:
+        keep &= ~((lonlat_c[:, 0] > bw) & (lonlat_c[:, 0] < be)
+                  & (lonlat_c[:, 1] > bs) & (lonlat_c[:, 1] < bn))
     print(f"footprints: {len(geom):,}  kept (area >= {MIN_AREA:.0f} m2, inside AOI): "
           f"{keep.sum():,}")
     cols = dict(

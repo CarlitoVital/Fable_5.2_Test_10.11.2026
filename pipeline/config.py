@@ -20,6 +20,11 @@ SCENE = ROOT / "web" / "scene"
 # the south-west and Mecapaca down-valley are deliberately left out).
 AOI_BUILDINGS = (-68.335, -16.675, -68.000, -16.405)
 
+# Left out on purpose: Viacha, a separate town 20 km south-west of El Alto. It
+# sits in the corner of the AOI and would only ever appear cut off at the edge
+# of the frame.
+EXCLUDE_BOXES = [(-68.335, -16.675, -68.270, -16.632)]
+
 # Terrain / land cover backdrop: much larger, so the tilted camera never sees
 # the edge of the world.
 AOI_TERRAIN = (-68.62, -16.95, -67.70, -16.12)
@@ -36,8 +41,8 @@ ORIGIN_LONLAT = (-68.1336, -16.4955)
 # --------------------------------------------------------------------------
 # WSF Evolution starts with the 1985 Landsat record: whatever it sees then is
 # "1985 or earlier" - the stock the animation opens with. (GHSL has a 1975
-# epoch, but it proved unreliable on the bare altiplano: it puts 1980s housing
-# estates such as Villa Adela before 1975.)
+# epoch too, but its 1980 and 1985 layers are interpolations, and its 1975
+# layer shows only about half of the pre-war centre as built - see README.)
 YEAR_BASE = 1985
 # Last year with direct evidence (Google Open Buildings 2.5D Temporal).
 YEAR_END = 2023

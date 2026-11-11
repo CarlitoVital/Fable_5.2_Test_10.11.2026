@@ -248,8 +248,12 @@ def fetch_obt(years=None):
 STEPS = dict(ghsl=fetch_ghsl, wsf=fetch_wsf, dem=fetch_dem,
              worldcover=fetch_worldcover, obt=fetch_obt)
 
-if __name__ == "__main__":
-    todo = sys.argv[1:] or list(STEPS)
+
+def main(steps=None):
     with rasterio.Env(**C.gdal_env()):
-        for step in todo:
+        for step in steps or list(STEPS):
             STEPS[step]()
+
+
+if __name__ == "__main__":
+    main(sys.argv[1:])

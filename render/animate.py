@@ -89,6 +89,22 @@ class Scene:
         flash[d:] = 0.0           # undated: no glow
         self.flash_w = flash
         self.flash_rgb = srgb_to_linear(np.array(hex_rgb(cfg.FLASH_COLOR)) / 255.0).astype(np.float32)
+        self.labels = self._labels()
+
+    def _labels(self):
+        """Place labels: local position, terrain height and the finished text."""
+        import pyproj
+        tr = pyproj.Transformer.from_crs("EPSG:4326", self.meta["crs"], always_xy=True)
+        ox, oy = self.meta["origin_utm"]
+        g = self.meta["terrain"]["fine"]
+        out = []
+        for text, lon, lat, offset in cfg.LABELS:
+            x, y = tr.transform(lon, lat)
+            x, y = x - ox, y - oy
+            c, r = (x - g["x0"]) / g["res"], (g["y1"] - y) / g["res"]
+            z = float(ndimage.map_coordinates(self.fine_z, [[r], [c]], order=1)[0])
+            out.append((text.format(z=f"{round(z / 10) * 10:,.0f}"), x, y, z, offset))
+        return out
 
 
 # ----------------------------------------------------------------------------
@@ -306,7 +322,7 @@ def overlay_state(sc: Scene, tau: float) -> dict:
         count=min(n_born, sc.n_dated),
         stock_tag=float(np.clip((tl.t_years + 0.25 - tau) / 0.45, 0, 1)),
         undated=max(0, n_born - sc.n_dated),
-        alpha=float(np.clip(tau / 0.4, 0, 1)),
+        alpha=1.0,     # lettering is there from the first frame (it doubles as the cover)
     )
 
 
@@ -316,8 +332,27 @@ def make(width, height, ss):
                                                          width, height)
 
 
+def label_state(sc: Scene, rd: "Renderer", tau: float):
+    """Screen positions of the place labels; they fade in once the old city stands."""
+    tl = sc.timeline
+    op = float(smoothstep((tau - (tl.t_stock + cfg.T_STOCK * 0.75)) / 0.8)) * 0.92
+    if op <= 0.01:
+        return []
+    M, _ = rd.camera(tau)
+    out = []
+    for text, x, y, z, (dx, dy) in sc.labels:
+        v = M @ np.array([x, y, (z - cfg.Z_REF) * cfg.TERRAIN_EXAGGERATION, 1.0])
+        if v[3] <= 0:
+            continue
+        sx = (v[0] / v[3] * 0.5 + 0.5) * rd.w
+        sy = (0.5 - v[1] / v[3] * 0.5) * rd.h
+        out.append((text, sx, sy, dx, dy, op))
+    return out
+
+
 def frame(sc, rd, ov, tau):
-    return composite(rd.render(tau), ov.frame(**overlay_state(sc, tau)))
+    return composite(rd.render(tau),
+                     ov.frame(**overlay_state(sc, tau), labels=label_state(sc, rd, tau)))
 
 
 def _worker(job):
@@ -332,7 +367,9 @@ def _worker(job):
 def encode(frames_dir: Path, out: Path, fps: int, crf: int):
     cmd = ["ffmpeg", "-y", "-loglevel", "error", "-framerate", str(fps),
            "-i", str(frames_dir / "f_%05d.png"),
-           "-vf", "scale=out_color_matrix=bt709:out_range=tv,format=yuv420p",
+           # x264 needs even dimensions (the half-size preview is 540 x 675)
+           "-vf", "pad=ceil(iw/2)*2:ceil(ih/2)*2,"
+                  "scale=out_color_matrix=bt709:out_range=tv,format=yuv420p",
            "-c:v", "libx264", "-preset", "slow", "-crf", str(crf), "-tune", "animation",
            "-colorspace", "bt709", "-color_primaries", "bt709", "-color_trc", "bt709",
            "-movflags", "+faststart", str(out)]

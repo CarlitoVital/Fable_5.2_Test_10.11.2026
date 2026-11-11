@@ -60,23 +60,51 @@ METHODS = {0: "undated", 1: "wsf", 2: "wsf_neighbourhood", 3: "open_buildings_te
            4: "ghs_age"}
 
 
-def wsf_local_year(lon, lat):
-    """35th percentile of settled WSF years within 90 m, and the own-pixel year."""
-    with rasterio.open(C.RAW / "wsf_evolution.tif") as ds:
-        wsf = ds.read(1).astype(np.int32)
-        c, r = ~ds.transform * (lon, lat)
-    R = WSF_RADIUS_PX
-    r = np.clip(np.floor(r).astype(int), R, wsf.shape[0] - R - 1)
-    c = np.clip(np.floor(c).astype(int), R, wsf.shape[1] - R - 1)
+def local_percentile_year(wsf, rows, cols, radius=WSF_RADIUS_PX, q=WSF_PERCENTILE):
+    """q-th percentile of the settled (non-zero) years in a disc around each pixel.
+
+    Returns 0 where the disc holds no settled pixel at all.
+    """
+    R = radius
+    rows = np.clip(rows, R, wsf.shape[0] - R - 1)
+    cols = np.clip(cols, R, wsf.shape[1] - R - 1)
     offs = [(dr, dc) for dr in range(-R, R + 1) for dc in range(-R, R + 1)
             if dr * dr + dc * dc <= R * R + 0.5]
-    stack = np.stack([wsf[r + dr, c + dc] for dr, dc in offs], axis=1)
+    stack = np.stack([wsf[rows + dr, cols + dc] for dr, dc in offs], axis=1)
     stack = np.where(stack == 0, 9999, stack)
     stack.sort(axis=1)
     k = (stack < 9999).sum(axis=1)
-    idx = np.floor(WSF_PERCENTILE * (np.maximum(k, 1) - 1) + 1e-9).astype(int)
-    local = np.where(k > 0, stack[np.arange(len(stack)), idx], 0)
-    return local, wsf[r, c]
+    idx = np.floor(q * (np.maximum(k, 1) - 1) + 1e-9).astype(int)
+    return np.where(k > 0, stack[np.arange(len(stack)), idx], 0)
+
+
+def wsf_local_year(lon, lat):
+    """(neighbourhood year, own-pixel year) from the WSF Evolution raster."""
+    with rasterio.open(C.RAW / "wsf_evolution.tif") as ds:
+        wsf = ds.read(1).astype(np.int32)
+        c, r = ~ds.transform * (lon, lat)
+    r = np.clip(np.floor(r).astype(int), 0, wsf.shape[0] - 1)
+    c = np.clip(np.floor(c).astype(int), 0, wsf.shape[1] - 1)
+    return local_percentile_year(wsf, r, c), wsf[r, c]
+
+
+def first_appearance(pres, years):
+    """Year a footprint turns from absent to present in Open Buildings (0 = never).
+
+    ``pres``: (n, n_years) building presence 0..1. Yearly presence is noisy for
+    small buildings, so the rule is strict: every earlier year clearly absent,
+    the year itself clearly present, and present on average ever after.
+    Run on buildings that certainly predate 1985 it still fires for about 8 % -
+    which is why it is only used outside the WSF settlement mask, where a late
+    date is plausible to begin with.
+    """
+    appear = np.zeros(len(pres), int)
+    for j in range(1, pres.shape[1]):
+        hit = ((appear == 0) & (pres[:, j] >= APPEAR)
+               & (pres[:, j:].mean(axis=1) >= PRESENT)
+               & (pres[:, :j].max(axis=1) < ABSENT))
+        appear[hit] = years[j]
+    return appear
 
 
 def hash01(x, y, salt=0):
@@ -86,6 +114,49 @@ def hash01(x, y, salt=0):
     h = (a ^ b ^ (salt * 83492791)) & 0x7FFFFFFF
     h = (h * 1103515245 + 12345) & 0x7FFFFFFF
     return (h % 1000003) / 1000003.0
+
+
+def assign_years(local, own, near, appear, there_2016, age, rnd):
+    """Apply the dating rules. All arguments are per-building arrays.
+
+    local       WSF neighbourhood year (0 = nothing settled within 90 m)
+    own         WSF year of the building's own pixel (0 = not settled)
+    near        WSF year of the nearest settled pixel within one pixel (0 = none)
+    appear      Open Buildings year of first appearance (0 = none)
+    there_2016  building already present in Open Buildings' first year
+    age         GHS-AGE class (0 = none, 1 = before 1975 ... 10 = 2015-2020)
+    rnd         a fixed pseudo-random number in [0, 1) per building
+
+    Returns (year, method, number of buildings moved by the start-up correction);
+    year is 0 and method 0 for undated buildings.
+    """
+    n = len(local)
+    year = np.zeros(n, int)
+    method = np.zeros(n, np.uint8)
+
+    # 1. WSF Evolution, own pixel settled
+    m = own > 0
+    year[m], method[m] = local[m], 1
+    # 3. not settled in WSF, but the building appears in Open Buildings 2017-2023
+    m = (own == 0) & (appear > 0)
+    year[m], method[m] = appear[m], 3
+    # 1b. own pixel empty but a settled pixel touches it (<= 45 m): the 30 m grid
+    #     simply does not line up with the footprint
+    m = (method == 0) & (near > 0)
+    year[m], method[m] = local[m], 2
+    # 4. standing in 2016, never mapped by WSF: JRC epoch, random year inside it
+    epochs = np.array([0] + C.GHSL_EPOCHS)
+    m = (method == 0) & there_2016 & (age >= 4)
+    lo = epochs[np.clip(age - 1, 0, 10)]
+    span = epochs[np.clip(age, 0, 10)] - lo
+    drawn = lo + 1 + np.floor(rnd * span).astype(int)
+    year[m], method[m] = np.minimum(drawn[m], C.OB_TEMPORAL_YEARS[0]), 4
+
+    # 2. start-up correction of the first WSF years
+    m = ((method == 1) | (method == 2)) & (year >= STARTUP_YEARS[0]) \
+        & (year <= STARTUP_YEARS[1]) & (age >= 1) & (age <= 3)
+    year[m] = C.YEAR_BASE
+    return year, method, int(m.sum())
 
 
 def main():
@@ -99,48 +170,9 @@ def main():
     age = col["ghsl_age"].astype(int)
     pres = np.stack([col[f"obt_p_{yr}"] for yr in C.OB_TEMPORAL_YEARS], axis=1)
     pres = np.nan_to_num(pres, nan=0.0)
-    years_obt = np.array(C.OB_TEMPORAL_YEARS)
-
-    # Open Buildings: first year a footprint turns from absent to present and
-    # stays. Yearly presence is noisy for small buildings, so the rule is strict:
-    # every earlier year clearly absent, the year itself clearly present, and
-    # present on average ever after. (Run on buildings that certainly predate
-    # 1985 it still fires for ~8 % - which is why it is only used outside the
-    # WSF settlement mask, where a late date is plausible to begin with.)
-    appear = np.zeros(n, int)
-    for j in range(1, pres.shape[1]):
-        hit = ((appear == 0) & (pres[:, j] >= APPEAR)
-               & (pres[:, j:].mean(axis=1) >= PRESENT)
-               & (pres[:, :j].max(axis=1) < ABSENT))
-        appear[hit] = years_obt[j]
-    there_2016 = pres[:, 0] >= PRESENT
-
-    year = np.zeros(n, int)
-    method = np.zeros(n, np.uint8)
-
-    # 1. WSF Evolution, own pixel settled
-    m = own > 0
-    year[m], method[m] = local[m], 1
-    # 3. not settled in WSF, but the building appears in Open Buildings 2017-2023
-    m = (own == 0) & (appear > 0)
-    year[m], method[m] = appear[m], 3
-    # 1b. own pixel empty but a settled pixel touches it (<= 45 m): the 30 m grid
-    #     simply does not line up with the footprint
-    m = (method == 0) & (col["wsf_year"] > 0)
-    year[m], method[m] = local[m], 2
-    # 4. standing in 2016, never mapped by WSF: JRC epoch, random year inside it
-    epochs = np.array([0] + C.GHSL_EPOCHS)
-    m = (method == 0) & there_2016 & (age >= 4)
-    lo = epochs[np.clip(age - 1, 0, 10)]
-    span = epochs[np.clip(age, 0, 10)] - lo
-    drawn = lo + 1 + np.floor(hash01(x, y, 7) * span).astype(int)
-    year[m], method[m] = np.minimum(drawn[m], 2016), 4
-
-    # 2. start-up correction of the first WSF years
-    m = ((method == 1) | (method == 2)) & (year >= STARTUP_YEARS[0]) \
-        & (year <= STARTUP_YEARS[1]) & (age >= 1) & (age <= 3)
-    year[m] = C.YEAR_BASE
-    startup_moved = int(m.sum())
+    appear = first_appearance(pres, np.array(C.OB_TEMPORAL_YEARS))
+    year, method, startup_moved = assign_years(
+        local, own, col["wsf_year"], appear, pres[:, 0] >= PRESENT, age, hash01(x, y, 7))
 
     dated = method > 0
     year[dated] = np.clip(year[dated], C.YEAR_BASE, C.YEAR_END)

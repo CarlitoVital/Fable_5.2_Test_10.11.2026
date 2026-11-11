@@ -161,12 +161,17 @@ def build_buildings(ox, oy):
     x = tbl["x"].to_numpy() - ox
     y = tbl["y"].to_numpy() - oy
 
-    # order: 1985 stock (centre outwards, for the opening), then by time, undated last
+    # order: 1985 stock (centre outwards, for the opening), then by time, undated last.
+    # The distance is jittered per building so the opening spreads like a city,
+    # with a ragged edge, rather than like a radar sweep.
     dist = np.hypot(x, y)
+    h = (np.floor(x * 3.0).astype(np.int64) * 73856093
+         ^ np.floor(y * 3.0).astype(np.int64) * 19349663) & 0xFFFF
+    spread = (dist + 1500.0) * (0.55 + 0.9 * h / 65535.0)
     base = (method > 0) & (year <= C.YEAR_BASE)
     und = method == 0
     key_t = np.where(und, 1e9, np.where(base, C.YEAR_BASE, t)).astype(np.float64)
-    key_d = np.where(base | und, dist, 0.0)
+    key_d = np.where(base | und, spread, 0.0)
     order = np.lexsort((key_d, key_t))
     geom, t, method, year, x, y, dist = (a[order] for a in (geom, t, method, year, x, y, dist))
     base, und = base[order], und[order]
