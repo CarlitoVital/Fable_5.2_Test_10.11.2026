@@ -1,0 +1,16 @@
+.venv/
+__pycache__/
+*.pyc
+.DS_Store
+
+# Data is re-creatable with the pipeline (see README) and too large for git.
+data/raw/
+data/processed/*
+!data/processed/summary.json
+data/scene/
+
+# Rendered frames and look-dev stills; the final video and poster are kept.
+out/frames*/
+out/test_*.png
+out/still_*.png
+*_preview.mp4
