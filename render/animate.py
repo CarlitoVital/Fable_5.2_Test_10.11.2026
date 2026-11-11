@@ -205,9 +205,11 @@ class Renderer:
         u, v = (xx / w - 0.5) * 2, (yy / h - 0.5) * 2
         r = np.sqrt((u * 0.95) ** 2 + (v * 0.85) ** 2)
         mask = 1.0 - cfg.VIGNETTE * smoothstep((r - 0.45) / 0.95)
-        # calm the areas that carry lettering
-        mask *= 1.0 - 0.42 * smoothstep((yy / h - 0.74) / 0.26)
-        mask *= 1.0 - 0.30 * smoothstep((0.20 - yy / h) / 0.20)
+        # calm the areas that carry lettering (350 px at the bottom, 270 px at the top
+        # of the 1080-wide layout)
+        k = w / 1080.0
+        mask *= 1.0 - 0.42 * smoothstep((yy - (h - 350 * k)) / (350 * k))
+        mask *= 1.0 - 0.30 * smoothstep((270 * k - yy) / (270 * k))
         self.mask = mask.astype(np.float32)
 
     # -- camera ----------------------------------------------------------------
@@ -217,10 +219,14 @@ class Renderer:
         lerp = lambda p, q: p + (q - p) * u
         tgt = [lerp(a["target"][k], b["target"][k]) for k in range(3)]
         tgt[2] = (tgt[2] - cfg.Z_REF) * cfg.TERRAIN_EXAGGERATION
+        # "fov" is the vertical field of view of a 4:5 frame; other formats keep the
+        # same width of landscape and see more or less above and below it
+        aspect = self.w / self.h
+        fov = lerp(a["fov"], b["fov"])
+        fov = 2 * math.degrees(math.atan(math.tan(math.radians(fov) / 2) * 0.8 / aspect))
         M, eye = R.orbit_camera(tgt, lerp(a["azimuth"], b["azimuth"]),
                                 lerp(a["elevation"], b["elevation"]),
-                                lerp(a["distance"], b["distance"]),
-                                lerp(a["fov"], b["fov"]), self.w / self.h)
+                                lerp(a["distance"], b["distance"]), fov, aspect)
         return np.ascontiguousarray(M), eye
 
     # -- drawing ---------------------------------------------------------------

@@ -79,10 +79,14 @@ class Overlay:
         self.ramp = Ramp()
         k = self.k
         self.mx = round(64 * k)                      # left margin
+        # The layout was drawn for 1080 x 1350. The title block hangs from the top,
+        # everything else stands on the bottom edge, so taller frames (9:16) just
+        # get more landscape in between.
+        self.by = lambda y: height - (1350 - y) * k
         # chart geometry
         self.bar_w, self.bar_gap = 14 * k, 5 * k
         self.chart_x = self.mx + 2 * k
-        self.chart_base = round(1236 * k)
+        self.chart_base = round(self.by(1236))
         self.chart_h = 112 * k
         self.vmax = max(per_year[y] for y in self.years)
         self.f_year = font("ExtraBold", 66 * k)
@@ -104,7 +108,7 @@ class Overlay:
         f_title = fit(cfg.TITLE, "ExtraBold", 70 * k, W - 2 * self.mx)
         d.text((self.mx - 2 * k, 166 * k), cfg.TITLE, font=f_title, fill=col + (255,), anchor="ls")
         # chart furniture
-        tracked(d, (self.mx + 2 * k, 1106 * k), cfg.CHART_LABEL, self.f_label, col + (215,),
+        tracked(d, (self.mx + 2 * k, self.by(1106)), cfg.CHART_LABEL, self.f_label, col + (215,),
                 tracking=2.6 * k)
         x_end = self.x_of(self.y1 + 1) + 70 * k
         d.line([(self.mx, self.chart_base + 1), (x_end, self.chart_base + 1)],
@@ -116,17 +120,17 @@ class Overlay:
         # notes
         avail = W - 2 * self.mx
         f_note = fit(cfg.NOTE, "Medium", 13 * k, avail, 9.5 * k)
-        d.text((self.mx, 1285 * k), cfg.NOTE, font=f_note, fill=dim + (215,), anchor="ls")
+        d.text((self.mx, self.by(1285)), cfg.NOTE, font=f_note, fill=dim + (215,), anchor="ls")
         if cfg.AUTHOR:
             f_auth = font("Medium", 13 * k)
-            d.text((self.mx, 1310 * k), cfg.AUTHOR, font=f_auth, fill=dim + (235,), anchor="ls")
+            d.text((self.mx, self.by(1310)), cfg.AUTHOR, font=f_auth, fill=dim + (235,), anchor="ls")
             room = avail - f_auth.getlength(cfg.AUTHOR) - 28 * k
             f_cred = fit(cfg.CREDITS, "Medium", 13 * k, room, 9.0 * k)
-            d.text((W - self.mx, 1310 * k), cfg.CREDITS, font=f_cred, fill=dim + (215,),
+            d.text((W - self.mx, self.by(1310)), cfg.CREDITS, font=f_cred, fill=dim + (215,),
                    anchor="rs")
         else:
             f_cred = fit(cfg.CREDITS, "Medium", 13 * k, avail, 9.5 * k)
-            d.text((self.mx, 1310 * k), cfg.CREDITS, font=f_cred, fill=dim + (215,), anchor="ls")
+            d.text((self.mx, self.by(1310)), cfg.CREDITS, font=f_cred, fill=dim + (215,), anchor="ls")
         # soft dark halo behind all lettering keeps it readable over the terrain
         alpha = text.getchannel("A")
         halo = alpha.filter(ImageFilter.GaussianBlur(9 * k)).point(lambda v: min(255, int(v * 1.5)))
@@ -166,17 +170,17 @@ class Overlay:
         # big year, tinted with the colour buildings of that year get
         c = np.array(self.ramp.srgb8(max(year_pos, 1989.0)), dtype=float)
         c = tuple(int(v) for v in np.clip(c * 0.9 + 255 * 0.1, 0, 255))
-        ybase = 1050 * k
+        ybase = self.by(1050)
         d.text((self.mx - 3 * k, ybase), str(year), font=self.f_year, fill=c + (255,), anchor="ls")
         if stock_tag > 0.01:
             x = self.mx + self.f_year.getlength(str(year)) + 16 * k
             tracked(d, (x, ybase - 3 * k), cfg.STOCK_LABEL, self.f_tag,
                     dim + (int(235 * stock_tag),), tracking=2.2 * k)
         # count line
-        x = tracked(d, (self.mx + 2 * k, 1081 * k), f"{count:,} BUILDINGS", self.f_count,
+        x = tracked(d, (self.mx + 2 * k, self.by(1081)), f"{count:,} BUILDINGS", self.f_count,
                     col + (235,), tracking=2.0 * k)
         if undated > 0:
-            tracked(d, (x + 18 * k, 1081 * k), f"+ {undated:,} UNDATED", self.f_count,
+            tracked(d, (x + 18 * k, self.by(1081)), f"+ {undated:,} UNDATED", self.f_count,
                     hex_rgb("#8b949e") + (235,), tracking=2.0 * k)
 
         # histogram

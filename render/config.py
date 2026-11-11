@@ -12,7 +12,7 @@ FONTS = ROOT / "assets" / "fonts"
 OUT = ROOT / "out"
 
 # --- output -----------------------------------------------------------------
-WIDTH, HEIGHT = 1080, 1350        # 4:5 portrait, the Instagram feed/reel format
+WIDTH, HEIGHT = 1080, 1350        # 4:5 portrait (Instagram feed); 1080 x 1920 gives 9:16
 FPS = 30
 SUPERSAMPLE = 4                   # render at 4x and average: clean edges, no shimmer
 CRF = 17                          # x264 quality (lower = better, bigger)

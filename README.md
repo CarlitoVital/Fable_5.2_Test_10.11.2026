@@ -170,7 +170,9 @@ built before 1975 — districts that are generations older.
 ## Make it yours
 
 - [`render/config.py`](render/config.py) — title, your name (`AUTHOR`), camera move,
-  timing, colours, labels, exaggeration.
+  timing, colours, labels, exaggeration. For a full-screen 9:16 reel set
+  `HEIGHT = 1920`: the lettering stays anchored to the top and bottom edges and the
+  frame gains the Cordillera Real above the city.
 - [`pipeline/config.py`](pipeline/config.py) — area, sources, exclusions. For another
   city change the bounding boxes, the UTM zone, the origin and the WSF tile; Open Buildings
   2.5D Temporal covers Africa, South and South-East Asia, Latin America and the Caribbean
