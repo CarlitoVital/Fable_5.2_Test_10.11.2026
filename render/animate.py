@@ -379,8 +379,22 @@ def _worker(job):
     return len(frames)
 
 
+def ffmpeg_exe() -> str:
+    """The system's ffmpeg if there is one, else the copy that the imageio-ffmpeg
+    package brings along (so nothing has to be installed by hand)."""
+    exe = shutil.which("ffmpeg")
+    if exe:
+        return exe
+    try:
+        import imageio_ffmpeg
+    except ImportError:
+        raise SystemExit("ffmpeg not found: install it, or run "
+                         "`pip install imageio-ffmpeg`") from None
+    return imageio_ffmpeg.get_ffmpeg_exe()
+
+
 def encode(frames_dir: Path, out: Path, fps: int, crf: int):
-    cmd = ["ffmpeg", "-y", "-loglevel", "error", "-framerate", str(fps),
+    cmd = [ffmpeg_exe(), "-y", "-loglevel", "error", "-framerate", str(fps),
            "-i", str(frames_dir / "f_%05d.png"),
            # x264 needs even dimensions (the half-size preview is 540 x 675)
            "-vf", "pad=ceil(iw/2)*2:ceil(ih/2)*2,"

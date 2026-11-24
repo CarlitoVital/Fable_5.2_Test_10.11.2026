@@ -16,7 +16,9 @@ Usage:  python -m pipeline.fetch_buildings
 from __future__ import annotations
 
 import json
+import os
 import re
+import ssl
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
@@ -61,9 +63,23 @@ def list_files(theme: str = "buildings", type_: str = "building") -> list[str]:
         token = m.group(1)
 
 
+def _ssl_context() -> ssl.SSLContext:
+    """Certificates for the HTTPS downloads: the ones the environment names
+    (SSL_CERT_FILE, e.g. behind a company proxy), otherwise certifi's - some
+    Python builds for macOS ship without any and fail every download."""
+    if os.environ.get("SSL_CERT_FILE"):
+        return ssl.create_default_context()
+    import certifi
+    return ssl.create_default_context(cafile=certifi.where())
+
+
+_SSL = _ssl_context()
+
+
 def _fs():
-    # aiohttp only honours HTTPS_PROXY / SSL_CERT_FILE with trust_env=True.
-    return fsspec.filesystem("https", client_kwargs={"trust_env": True})
+    # aiohttp only honours HTTPS_PROXY with trust_env=True; ``ssl`` is passed
+    # on to every request
+    return fsspec.filesystem("https", client_kwargs={"trust_env": True}, ssl=_SSL)
 
 
 def _bbox_columns(md: pq.FileMetaData) -> dict[str, int]:

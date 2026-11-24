@@ -10,8 +10,10 @@ rasterio>=1.4
 pyproj>=3.6
 shapely>=2.0
 mapbox-earcut>=1.0
+certifi
 # renderer
 numba>=0.60
 pillow>=10.3
+imageio-ffmpeg>=0.5        # an ffmpeg binary, used when none is installed
 # tests
 pytest>=8

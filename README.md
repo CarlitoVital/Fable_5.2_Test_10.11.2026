@@ -33,18 +33,19 @@ from El Alto to Zona Sur.
 
 ## Run it
 
-Works on Windows, macOS and Linux. You need **Python 3.10 – 3.13** (tested with 3.13),
-**ffmpeg** and **git**,
-about 5 GB of free disk (frames are written to disk before encoding) and 8 GB of RAM
-for the default four parallel jobs. No GPU, no accounts, no API keys.
+Works on Windows, macOS and Linux. You need **Python 3.9 – 3.13** and **git** — a Mac
+already has both (the built-in `python3` is fine). ffmpeg is optional: if it is not
+installed, the copy that comes with the `imageio-ffmpeg` package is used. Plan for about
+5 GB of free disk (frames are written to disk before encoding) and 8 GB of RAM for the
+default four parallel jobs. No GPU, no accounts, no API keys.
 
 **1. Install the tools** (once; open a new terminal afterwards)
 
 | | |
 |---|---|
-| Windows (PowerShell) | `winget install Python.Python.3.12`, then `winget install Gyan.FFmpeg`, then `winget install Git.Git` |
-| macOS ([Homebrew](https://brew.sh)) | `brew install python@3.12 ffmpeg git` |
-| Linux (Debian/Ubuntu) | `sudo apt install python3 python3-venv ffmpeg git` |
+| macOS | nothing to install. If macOS offers the "command line developer tools" the first time you type `git`, accept |
+| Windows (PowerShell) | `winget install Python.Python.3.12`, then `winget install Git.Git` |
+| Linux (Debian/Ubuntu) | `sudo apt install python3 python3-venv git` |
 
 **2. Get the code** (or download the ZIP from the branch page on GitHub)
 
@@ -55,11 +56,12 @@ cd Fable_5.2_Test_10.11.2026
 
 **3. Create the Python environment** (once)
 
-macOS / Linux (with Homebrew's Python on macOS, write `python3.12` instead of `python3`):
+macOS / Linux:
 
 ```bash
 python3 -m venv .venv
 source .venv/bin/activate
+pip install --upgrade pip
 pip install -r requirements.txt
 ```
 
@@ -68,11 +70,14 @@ Windows (PowerShell):
 ```powershell
 py -3.12 -m venv .venv
 .venv\Scripts\Activate.ps1
+python -m pip install --upgrade pip
 pip install -r requirements.txt
 ```
 
 If PowerShell refuses to run `Activate.ps1`, allow local scripts once with
-`Set-ExecutionPolicy -Scope CurrentUser RemoteSigned`. In every new terminal, activate the
+`Set-ExecutionPolicy -Scope CurrentUser RemoteSigned`. On an Apple Silicon Mac, the
+prebuilt packages need macOS 14 or newer; on older systems `pip install` stops at
+`rasterio`. In every new terminal, activate the
 environment again (`source .venv/bin/activate` or `.venv\Scripts\Activate.ps1`) before
 the commands below.
 

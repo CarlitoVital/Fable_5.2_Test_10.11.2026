@@ -6,6 +6,7 @@ parameters live in ``web/config.js`` instead.
 """
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -103,7 +104,7 @@ OB_TEMPORAL_YEARS = list(range(2016, 2024))
 
 def gdal_env() -> dict:
     """GDAL settings for fast, polite HTTP range reads of cloud-optimised TIFFs."""
-    return dict(
+    env = dict(
         GDAL_DISABLE_READDIR_ON_OPEN="EMPTY_DIR",
         CPL_VSIL_CURL_ALLOWED_EXTENSIONS=".tif",
         GDAL_HTTP_MAX_RETRY="5",
@@ -112,3 +113,8 @@ def gdal_env() -> dict:
         VSI_CACHE="TRUE",
         VSI_CACHE_SIZE=str(64 * 1024 * 1024),
     )
+    # certificates for GDAL's own HTTPS client, unless the environment names some
+    if not (os.environ.get("CURL_CA_BUNDLE") or os.environ.get("SSL_CERT_FILE")):
+        import certifi
+        env["CURL_CA_BUNDLE"] = certifi.where()
+    return env
