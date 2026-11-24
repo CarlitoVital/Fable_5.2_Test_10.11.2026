@@ -12,31 +12,49 @@ from render.overlay import Ramp
 # ----------------------------------------------------------------------------
 # dating rules
 # ----------------------------------------------------------------------------
-def test_neighbourhood_year_ignores_salt_and_pepper():
+def _year_at_centre(wsf, own=None):
+    """Year the WSF rule gives a building on the centre pixel of ``wsf``."""
+    r = c = np.array([wsf.shape[0] // 2])
+    nb = D.neighbourhood(wsf, r, c)
+    src = wsf[r, c] if own is None else np.array([own])
+    return int(D.wsf_year(src, nb)[0])
+
+
+def test_old_fabric_ignores_salt_and_pepper():
     """An old district whose raster is sprinkled with late pixels stays old."""
     wsf = np.full((21, 21), 1985, np.int32)
     wsf[::2, ::2] = 2005                       # a quarter of the pixels are noise
-    own_is_noise = wsf[10, 10] == 2005
-    assert own_is_noise
-    assert D.local_percentile_year(wsf, np.array([10]), np.array([10]))[0] == 1985
+    assert wsf[10, 10] == 2005                 # ... including the building's own
+    assert _year_at_centre(wsf) == 1985
 
 
-def test_neighbourhood_year_keeps_a_new_district_new():
-    """One stray early pixel must not drag a 2004 district back to 1985."""
+def test_new_district_keeps_its_year_despite_a_stray_early_pixel():
     wsf = np.full((21, 21), 2004, np.int32)
     wsf[10, 11] = 1985
-    assert D.local_percentile_year(wsf, np.array([10]), np.array([10]))[0] == 2004
+    assert _year_at_centre(wsf) == 2004
 
 
-def test_neighbourhood_year_without_settlement_is_zero():
+def test_isolated_outliers_inside_built_up_land_are_pulled_in():
+    late = np.full((21, 21), 1995, np.int32)
+    late[10, 10] = 2010                        # one late pixel in a 1990s district
+    assert _year_at_centre(late) == 1995
+    early = np.full((21, 21), 2001, np.int32)
+    early[10, 10] = 1985                       # one "1985" pixel in a 2000s district
+    assert _year_at_centre(early) == 2001
+
+
+def test_growth_frontier_keeps_its_own_year():
+    """At the edge of the city the neighbours are older; that must not date the
+    newest buildings early."""
     wsf = np.zeros((21, 21), np.int32)
-    assert D.local_percentile_year(wsf, np.array([10]), np.array([10]))[0] == 0
+    wsf[:, :10] = 2003                         # older district to the west
+    wsf[:, 10] = 2012                          # the newest row, the rest still empty
+    assert _year_at_centre(wsf) == 2012
 
 
-def test_neighbourhood_year_ignores_unsettled_pixels():
-    wsf = np.zeros((21, 21), np.int32)
-    wsf[9, 10] = 1999                          # a single settled neighbour
-    assert D.local_percentile_year(wsf, np.array([10]), np.array([10]))[0] == 1999
+def test_no_settlement_nearby():
+    nb = D.neighbourhood(np.zeros((21, 21), np.int32), np.array([10]), np.array([10]))
+    assert nb["lo"][0] == 0 and nb["hi"][0] == 0 and nb["open_share"][0] == 1.0
 
 
 def test_first_appearance():
@@ -52,22 +70,31 @@ def test_first_appearance():
 
 
 def test_rule_hierarchy():
-    #                 wsf   wsf+startup  obt   edge   ghsl  none
-    local = np.array([1997, 1987,        0,    2001,  0,    0])
-    own = np.array([1997,   1987,        0,    0,     0,    0])
-    near = np.array([1997,  1987,        0,    2003,  0,    0])
-    appear = np.array([2020, 0,          2019, 0,     0,    0])
-    there = np.array([True, True,        False, True, True, True])
-    age = np.array([5,      1,           0,    6,     7,    1])
-    rnd = np.full(6, 0.5)
-    year, method, moved = D.assign_years(local, own, near, appear, there, age, rnd)
-    assert method.tolist() == [1, 1, 3, 2, 4, 0]
+    #                 wsf   wsf+startup  obt    edge   ghsl   ghsl'15-20  none
+    own = np.array([1997,   1987,        0,     0,     0,     0,          0])
+    near = np.array([1997,  1987,        0,     2003,  0,     0,          0])
+    nb = dict(lo=np.array([1995, 1987, 0, 2001, 0, 0, 0]),
+              hi=np.array([1999, 1990, 0, 2006, 0, 0, 0]),
+              old_share=np.zeros(7), open_share=np.zeros(7))
+    appear = np.array([2020, 0,          2019,  0,     0,     0,          0])
+    there = np.array([True, True,        False, True,  True,  True,       True])
+    age = np.array([5,      1,           0,     6,     7,     10,         1])
+    rnd = np.full(7, 0.5)
+    year, method, moved = D.assign_years(own, near, nb, appear, there, age, rnd)
+    assert method.tolist() == [1, 1, 3, 2, 4, 4, 0]
     assert year[0] == 1997                     # WSF wins over a later Open Buildings date
     assert year[1] == C.YEAR_BASE and moved == 1   # 1987 + "built before 1985" -> stock
     assert year[2] == 2019
-    assert year[3] == 2001                     # neighbourhood year, not the nearest pixel
+    assert year[3] == 2003                     # the adjacent pixel's year (inside its range)
     assert 2000 < year[4] <= 2005              # GHS-AGE class 7 = 2000-2005
-    assert year[5] == 0                        # "before 1975" by default is not evidence
+    assert year[5] in (2015, 2016)             # last epoch: after WSF ended, before 2016
+    assert year[6] == 0                        # "before 1975" by default is not evidence
+
+
+def test_old_fabric_overrides_late_pixels():
+    nb = dict(lo=np.array([1985]), hi=np.array([1999]), old_share=np.array([0.4]),
+              open_share=np.array([0.0]))
+    assert D.wsf_year(np.array([2008]), nb)[0] == C.YEAR_BASE
 
 
 def test_hash_is_deterministic_and_uniform():

@@ -13,6 +13,9 @@ OUT = ROOT / "out"
 
 # --- output -----------------------------------------------------------------
 WIDTH, HEIGHT = 1080, 1350        # 4:5 portrait (Instagram feed); 1080 x 1920 gives 9:16
+# In frames taller than 4:5 the lettering keeps this much room free at the top and bottom
+# (px at 1080 wide; Instagram's Reels interface covers them). The map still fills the frame.
+TALL_FRAME_MARGINS = (250, 320)
 FPS = 30
 SUPERSAMPLE = 4                   # render at 4x and average: clean edges, no shimmer
 CRF = 17                          # x264 quality (lower = better, bigger)
@@ -81,6 +84,8 @@ BLOOM = 0.8                       # glow strength of new construction (0 = off)
 KICKER = "BOLIVIA  ·  1985 – 2023"
 TITLE = "LA PAZ · EL ALTO"
 CHART_LABEL = "BUILDINGS ADDED PER YEAR"
+# Divider on the chart where the record changes satellites (None = no divider)
+SENSOR_SWITCH = (2016, "LANDSAT", "SENTINEL-2")
 STOCK_LABEL = "AND EARLIER"
 NOTE = ("Year = first satellite detection of a settlement at the building's site, not a "
         "cadastral date (Landsat 1985–2015, Sentinel-2 2016–23)")

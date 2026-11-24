@@ -83,6 +83,13 @@ def cross_checks():
     old = (s.wsf_exact.to_numpy() == C.YEAR_BASE)
     appear = D.first_appearance(pres[old], np.array(C.OB_TEMPORAL_YEARS))
     out["appearance_rule_false_positive_rate"] = float((appear > 0).mean())
+    # 4. where did the city grow? (the claim in the README and the caption)
+    g = pq.read_table(C.PROCESSED / "buildings.parquet", columns=["ground"]).to_pandas().ground
+    added = ((b.method > 0) & (b.year > C.YEAR_BASE)).to_numpy()
+    z = g.to_numpy()[added]
+    out["added_on_plateau"] = float((z >= 3900).mean())
+    out["added_in_basin"] = float(((z >= 3450) & (z < 3900)).mean())
+    out["added_below_3450"] = float((z < 3450).mean())
     return out
 
 
@@ -101,7 +108,12 @@ cross-checks
   1985 stock confirmed by JRC GHSL (cell >= 15 % built by 1990): {c['stock_confirmed_by_ghsl_1990']:.1%}
   Open Buildings height vs OSM floor tags (x {3} m):             r = {c['height_vs_osm_floors_r']:.2f}
   towers with >= 10 tagged floors (n = {c['towers_n']}):                  {c['towers_osm_mean_m']:.1f} m tagged, {c['towers_open_buildings_mean_m']:.1f} m measured
-  "new building" rule firing on pre-1985 buildings:              {c['appearance_rule_false_positive_rate']:.1%}""")
+  "new building" rule firing on pre-1985 buildings:              {c['appearance_rule_false_positive_rate']:.1%}
+
+where the buildings added since 1985 stand
+  plateau above 3,900 m (El Alto):                               {c['added_on_plateau']:.1%}
+  La Paz basin and slopes, 3,450 - 3,900 m:                      {c['added_in_basin']:.1%}
+  Zona Sur and lower valleys, below 3,450 m:                     {c['added_below_3450']:.1%}""")
     return not bad
 
 

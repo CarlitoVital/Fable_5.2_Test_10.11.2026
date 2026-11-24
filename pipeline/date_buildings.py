@@ -6,13 +6,21 @@ location** - not by when the present structure was finished. Three sensors
 take over from each other:
 
 1. **DLR WSF Evolution** (Landsat, 30 m, yearly 1985-2015) is the backbone.
-   The raw raster is noisy from pixel to pixel (it dates half of the colonial
-   centre to the late 1990s), so a building takes the 35th percentile of the
-   settled pixels within 90 m: "the year by which a third of the surrounding
-   block was detected". This applies to buildings on a settled pixel or
-   touching one (the 30 m grid rarely lines up with a footprint). Everything
-   detected in the first image year is "1985 or earlier" - the stock the
-   animation starts with.
+   A building takes the year its own pixel (or, if that is empty, the adjacent
+   settled pixel - the 30 m grid rarely lines up with a footprint) was first
+   detected as settled, checked against the pixels within 90 m:
+   * old fabric - a third of the settled pixels around it date from 1985 or
+     before: the building counts as "1985 or earlier". Later readings in the
+     dense old core are noise; taken at face value they put half of the
+     colonial centre in the 1990s.
+   * growth frontier - at least 30 % of the surroundings are still empty: the
+     pixel's own year stands. The neighbours of a new building at the edge of
+     the city are naturally older, so smoothing here would date growth early.
+   * inside built-up land - the pixel's year, held to the 35th-65th percentile
+     of the surrounding years, which removes isolated outliers in both
+     directions.
+   Everything detected in the first image year is "1985 or earlier" - the
+   stock the animation starts with.
 2. **Start-up correction**: WSF's first three years (1986-88) are inflated by
    thin early Landsat coverage. Where JRC's GHS-AGE says the cell was mostly
    built before 1985, such buildings join the "1985 or earlier" stock.
@@ -22,7 +30,8 @@ take over from each other:
    stays) gets that year.
 4. **JRC GHS-AGE** (100 m, 5-year epochs) is the last resort for buildings that
    exist in 2016 but that WSF never mapped; the year is drawn at random inside
-   the epoch.
+   the epoch (for the last epoch, 2015-2020, inside the two years left open
+   between the end of WSF and the first Open Buildings image: 2015-2016).
 
 Buildings without any of that evidence stay undated and are not animated.
 Heights come from Open Buildings 2.5D (median of 2021-2023, 80th percentile
@@ -48,7 +57,9 @@ SUMMARY = C.PROCESSED / "summary.json"
 
 # --- tunables ---------------------------------------------------------------
 WSF_RADIUS_PX = 3          # 3 x 30 m = 90 m neighbourhood
-WSF_PERCENTILE = 0.35      # "a third of the block is settled"
+OLD_FABRIC_SHARE = 0.35    # block a third settled by 1985 -> "1985 or earlier"
+FRONTIER_OPEN = 0.30       # this much empty land around a building -> growth frontier
+OUTLIER_RANGE = (0.35, 0.65)  # inside built-up land a year is held to these percentiles
 STARTUP_YEARS = (1986, 1988)
 PRESENT = 0.30             # Open Buildings presence that counts as "a building"
 ABSENT = 0.25              # ... and as "nothing there yet"
@@ -60,10 +71,13 @@ METHODS = {0: "undated", 1: "wsf", 2: "wsf_neighbourhood", 3: "open_buildings_te
            4: "ghs_age"}
 
 
-def local_percentile_year(wsf, rows, cols, radius=WSF_RADIUS_PX, q=WSF_PERCENTILE):
-    """q-th percentile of the settled (non-zero) years in a disc around each pixel.
+def neighbourhood(wsf, rows, cols, radius=WSF_RADIUS_PX, qs=OUTLIER_RANGE):
+    """Statistics of the WSF pixels in a disc around each building pixel.
 
-    Returns 0 where the disc holds no settled pixel at all.
+    Returns a dict of per-building arrays:
+      lo, hi      the ``qs`` percentiles of the settled years (0 = nothing settled)
+      old_share   share of the settled pixels that are "1985 or earlier"
+      open_share  share of the disc that is not settled at all
     """
     R = radius
     rows = np.clip(rows, R, wsf.shape[0] - R - 1)
@@ -71,21 +85,35 @@ def local_percentile_year(wsf, rows, cols, radius=WSF_RADIUS_PX, q=WSF_PERCENTIL
     offs = [(dr, dc) for dr in range(-R, R + 1) for dc in range(-R, R + 1)
             if dr * dr + dc * dc <= R * R + 0.5]
     stack = np.stack([wsf[rows + dr, cols + dc] for dr, dc in offs], axis=1)
-    stack = np.where(stack == 0, 9999, stack)
-    stack.sort(axis=1)
-    k = (stack < 9999).sum(axis=1)
-    idx = np.floor(q * (np.maximum(k, 1) - 1) + 1e-9).astype(int)
-    return np.where(k > 0, stack[np.arange(len(stack)), idx], 0)
+    settled = (stack > 0).sum(axis=1)
+    old_share = np.where(settled > 0,
+                         (stack == C.YEAR_BASE).sum(axis=1) / np.maximum(settled, 1), 0.0)
+    srt = np.sort(np.where(stack == 0, 9999, stack), axis=1)
+
+    def percentile(q):
+        idx = np.floor(q * (np.maximum(settled, 1) - 1) + 1e-9).astype(int)
+        return np.where(settled > 0, srt[np.arange(len(srt)), idx], 0)
+
+    return dict(lo=percentile(qs[0]), hi=percentile(qs[1]), old_share=old_share,
+                open_share=1.0 - settled / len(offs))
 
 
-def wsf_local_year(lon, lat):
-    """(neighbourhood year, own-pixel year) from the WSF Evolution raster."""
+def wsf_year(src, nb):
+    """Year of a building from the WSF year of its pixel (``src``) and the
+    statistics of its neighbourhood (``nb``, see ``neighbourhood``)."""
+    inside = np.clip(src, nb["lo"], nb["hi"])
+    year = np.where(nb["open_share"] >= FRONTIER_OPEN, src, inside)
+    return np.where(nb["old_share"] >= OLD_FABRIC_SHARE, C.YEAR_BASE, year)
+
+
+def wsf_evidence(lon, lat):
+    """(own-pixel year, neighbourhood statistics) from the WSF Evolution raster."""
     with rasterio.open(C.RAW / "wsf_evolution.tif") as ds:
         wsf = ds.read(1).astype(np.int32)
         c, r = ~ds.transform * (lon, lat)
     r = np.clip(np.floor(r).astype(int), 0, wsf.shape[0] - 1)
     c = np.clip(np.floor(c).astype(int), 0, wsf.shape[1] - 1)
-    return local_percentile_year(wsf, r, c), wsf[r, c]
+    return wsf[r, c], neighbourhood(wsf, r, c)
 
 
 def first_appearance(pres, years):
@@ -116,41 +144,49 @@ def hash01(x, y, salt=0):
     return (h % 1000003) / 1000003.0
 
 
-def assign_years(local, own, near, appear, there_2016, age, rnd):
+def assign_years(own, near, nb, appear, there_2016, age, rnd, rule=None):
     """Apply the dating rules. All arguments are per-building arrays.
 
-    local       WSF neighbourhood year (0 = nothing settled within 90 m)
     own         WSF year of the building's own pixel (0 = not settled)
     near        WSF year of the nearest settled pixel within one pixel (0 = none)
+    nb          WSF neighbourhood statistics (dict of arrays, see ``neighbourhood``)
     appear      Open Buildings year of first appearance (0 = none)
     there_2016  building already present in Open Buildings' first year
     age         GHS-AGE class (0 = none, 1 = before 1975 ... 10 = 2015-2020)
     rnd         a fixed pseudo-random number in [0, 1) per building
+    rule        how a WSF pixel year becomes a building year (default ``wsf_year``;
+                ``compare_rules`` swaps in the alternatives)
 
     Returns (year, method, number of buildings moved by the start-up correction);
     year is 0 and method 0 for undated buildings.
     """
-    n = len(local)
+    rule = rule or wsf_year
+    n = len(own)
     year = np.zeros(n, int)
     method = np.zeros(n, np.uint8)
 
     # 1. WSF Evolution, own pixel settled
     m = own > 0
-    year[m], method[m] = local[m], 1
+    year[m], method[m] = rule(own, nb)[m], 1
     # 3. not settled in WSF, but the building appears in Open Buildings 2017-2023
     m = (own == 0) & (appear > 0)
     year[m], method[m] = appear[m], 3
     # 1b. own pixel empty but a settled pixel touches it (<= 45 m): the 30 m grid
     #     simply does not line up with the footprint
     m = (method == 0) & (near > 0)
-    year[m], method[m] = local[m], 2
-    # 4. standing in 2016, never mapped by WSF: JRC epoch, random year inside it
+    year[m], method[m] = rule(near, nb)[m], 2
+    # 4. standing in 2016, never mapped by WSF: JRC epoch, random year inside it.
+    #    In the last epoch (2015-2020) only two years are possible: WSF's record
+    #    ends with 2015 without the building, Open Buildings shows it in 2016.
+    first_obt = C.OB_TEMPORAL_YEARS[0]
     epochs = np.array([0] + C.GHSL_EPOCHS)
     m = (method == 0) & there_2016 & (age >= 4)
     lo = epochs[np.clip(age - 1, 0, 10)]
     span = epochs[np.clip(age, 0, 10)] - lo
     drawn = lo + 1 + np.floor(rnd * span).astype(int)
-    year[m], method[m] = np.minimum(drawn[m], C.OB_TEMPORAL_YEARS[0]), 4
+    last = age >= 10
+    drawn[last] = first_obt - 1 + np.floor(rnd[last] * 2).astype(int)
+    year[m], method[m] = np.minimum(drawn[m], first_obt), 4
 
     # 2. start-up correction of the first WSF years
     m = ((method == 1) | (method == 2)) & (year >= STARTUP_YEARS[0]) \
@@ -166,13 +202,13 @@ def main():
     n = tbl.num_rows
     x, y = col["x"], col["y"]
 
-    local, own = wsf_local_year(col["lon"], col["lat"])
+    own, nb = wsf_evidence(col["lon"], col["lat"])
     age = col["ghsl_age"].astype(int)
     pres = np.stack([col[f"obt_p_{yr}"] for yr in C.OB_TEMPORAL_YEARS], axis=1)
     pres = np.nan_to_num(pres, nan=0.0)
     appear = first_appearance(pres, np.array(C.OB_TEMPORAL_YEARS))
     year, method, startup_moved = assign_years(
-        local, own, col["wsf_year"], appear, pres[:, 0] >= PRESENT, age, hash01(x, y, 7))
+        own, col["wsf_year"], nb, appear, pres[:, 0] >= PRESENT, age, hash01(x, y, 7))
 
     dated = method > 0
     year[dated] = np.clip(year[dated], C.YEAR_BASE, C.YEAR_END)
@@ -215,7 +251,8 @@ def main():
         "by_method": {METHODS[k]: int((method == k).sum()) for k in METHODS},
         "per_year": {str(C.YEAR_BASE + i): int(v) for i, v in enumerate(per_year)},
         "height_source": {k: int((h_src == k).sum()) for k in np.unique(h_src)},
-        "parameters": dict(wsf_radius_m=WSF_RADIUS_PX * 30, wsf_percentile=WSF_PERCENTILE,
+        "parameters": dict(wsf_radius_m=WSF_RADIUS_PX * 30, old_fabric_share=OLD_FABRIC_SHARE,
+                           frontier_open=FRONTIER_OPEN, outlier_range=list(OUTLIER_RANGE),
                            startup_years=list(STARTUP_YEARS), present=PRESENT,
                            absent=ABSENT, appear=APPEAR),
     }

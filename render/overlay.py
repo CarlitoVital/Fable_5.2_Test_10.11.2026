@@ -67,6 +67,18 @@ def fit(text, name, size, max_width, min_size=10.0):
     return font(name, min_size)
 
 
+def layout_insets(width: int, height: int) -> tuple[float, float]:
+    """Room kept free above and below the lettering, in pixels.
+
+    The layout was drawn for 1080 x 1350 (4:5). A taller frame gets the same
+    lettering, moved inwards so that it stays clear of the Reels interface;
+    the extra height is split in the ratio of ``TALL_FRAME_MARGINS``.
+    """
+    extra = max(0.0, height - 1350 * width / 1080.0)
+    top, bottom = cfg.TALL_FRAME_MARGINS
+    return extra * top / (top + bottom), extra * bottom / (top + bottom)
+
+
 class Overlay:
     def __init__(self, per_year: dict[int, int], n_stock: int, n_undated: int,
                  width=cfg.WIDTH, height=cfg.HEIGHT):
@@ -82,7 +94,9 @@ class Overlay:
         # The layout was drawn for 1080 x 1350. The title block hangs from the top,
         # everything else stands on the bottom edge, so taller frames (9:16) just
         # get more landscape in between.
-        self.by = lambda y: height - (1350 - y) * k
+        top, bottom = layout_insets(width, height)
+        self.ty = lambda y: top + y * k
+        self.by = lambda y: height - bottom - (1350 - y) * k
         # chart geometry
         self.bar_w, self.bar_gap = 14 * k, 5 * k
         self.chart_x = self.mx + 2 * k
@@ -94,6 +108,7 @@ class Overlay:
         self.f_label = font("SemiBold", 14.5 * k)
         self.f_tick = font("Medium", 13.5 * k)
         self.f_tag = font("SemiBold", 15 * k)
+        self.f_switch = font("SemiBold", 11.5 * k)
         self.static = self._static()
 
     # ------------------------------------------------------------------ static
@@ -103,10 +118,10 @@ class Overlay:
         d = ImageDraw.Draw(text)
         col, dim, acc = hex_rgb(cfg.TEXT_COLOR), hex_rgb(cfg.TEXT_DIM), hex_rgb(cfg.ACCENT)
         # title block
-        tracked(d, (self.mx + 2 * k, 92 * k), cfg.KICKER, font("SemiBold", 20 * k), acc + (255,),
+        tracked(d, (self.mx + 2 * k, self.ty(92)), cfg.KICKER, font("SemiBold", 20 * k), acc + (255,),
                 tracking=5.5 * k)
         f_title = fit(cfg.TITLE, "ExtraBold", 70 * k, W - 2 * self.mx)
-        d.text((self.mx - 2 * k, 166 * k), cfg.TITLE, font=f_title, fill=col + (255,), anchor="ls")
+        d.text((self.mx - 2 * k, self.ty(166)), cfg.TITLE, font=f_title, fill=col + (255,), anchor="ls")
         # chart furniture
         tracked(d, (self.mx + 2 * k, self.by(1106)), cfg.CHART_LABEL, self.f_label, col + (215,),
                 tracking=2.6 * k)
@@ -138,7 +153,7 @@ class Overlay:
         out.putalpha(halo.point(lambda v: int(v * 0.55)))
         # faint light bloom on the title, as on a backlit sign
         title_only = Image.new("L", (W, H), 0)
-        ImageDraw.Draw(title_only).text((self.mx - 2 * k, 166 * k), cfg.TITLE, font=f_title,
+        ImageDraw.Draw(title_only).text((self.mx - 2 * k, self.ty(166)), cfg.TITLE, font=f_title,
                                         fill=255, anchor="ls")
         glow = title_only.filter(ImageFilter.GaussianBlur(7 * k)).point(lambda v: int(v * 0.30))
         glow_rgba = Image.new("RGBA", (W, H), col + (0,))
@@ -193,6 +208,22 @@ class Overlay:
             if h >= 0.5:
                 d.rectangle([x0, self.chart_base - h, x0 + self.bar_w, self.chart_base],
                             fill=self.ramp.srgb8(y + 0.5) + (255,))
+        # where the record changes satellites: the bars on either side are not
+        # strictly comparable, and the chart says so
+        if cfg.SENSOR_SWITCH and year_pos > cfg.SENSOR_SWITCH[0]:
+            sw_year, left, right = cfg.SENSOR_SWITCH
+            a = int(200 * min((year_pos - sw_year) / 0.6, 1.0))
+            xs = self.x_of(sw_year) - self.bar_gap / 2
+            top = self.chart_base - self.chart_h - 2 * k
+            y = top
+            while y < self.chart_base:                      # dotted divider
+                d.line([(xs, y), (xs, min(y + 3 * k, self.chart_base))],
+                       fill=dim + (a,), width=max(1, round(k)))
+                y += 7 * k
+            f = self.f_switch
+            tracked(d, (xs - 7 * k, top + 9 * k), left, f, dim + (a,), tracking=1.6 * k,
+                    anchor="rs")
+            tracked(d, (xs + 7 * k, top + 9 * k), right, f, dim + (a,), tracking=1.6 * k)
         # playhead
         if year_pos > self.y0:
             xp = min(self.x_of(min(year_pos, self.y1 + 1)), self.x_of(self.y1 + 1) - self.bar_gap)

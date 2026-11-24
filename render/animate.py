@@ -4,6 +4,7 @@
     python -m render.animate --year 2005     one still, end of that year
     python -m render.animate --still 12.5    one still, 12.5 s into the clip
     python -m render.animate --preview       quick half-resolution draft
+    python -m render.animate --format 9x16   full-screen Reels version (1080 x 1920)
 
 Timeline: empty landscape -> the city of 1985 rises (centre outwards) ->
 1986..2023, every building appearing in its year with a short glow ->
@@ -27,7 +28,7 @@ from scipy import ndimage
 
 from . import config as cfg
 from . import raster as R
-from .overlay import Overlay, Ramp, composite, hex_rgb, srgb_to_linear
+from .overlay import Overlay, Ramp, composite, hex_rgb, layout_insets, srgb_to_linear
 
 
 # ----------------------------------------------------------------------------
@@ -208,8 +209,9 @@ class Renderer:
         # calm the areas that carry lettering (350 px at the bottom, 270 px at the top
         # of the 1080-wide layout)
         k = w / 1080.0
-        mask *= 1.0 - 0.42 * smoothstep((yy - (h - 350 * k)) / (350 * k))
-        mask *= 1.0 - 0.30 * smoothstep((270 * k - yy) / (270 * k))
+        top, bottom = layout_insets(w, h)
+        mask *= 1.0 - 0.42 * smoothstep((yy - (h - bottom - 350 * k)) / (350 * k))
+        mask *= 1.0 - 0.30 * smoothstep((top + 270 * k - yy) / (270 * k))
         self.mask = mask.astype(np.float32)
 
     # -- camera ----------------------------------------------------------------
@@ -390,9 +392,17 @@ def main():
     ap.add_argument("--jobs", type=int, default=min(4, mp.cpu_count()))
     ap.add_argument("--out", type=Path, default=None)
     ap.add_argument("--keep-frames", action="store_true")
+    ap.add_argument("--format", choices=["config", "4x5", "9x16"], default="config",
+                    help="frame shape: as in render/config.py (default), 4:5 or 9:16")
     args = ap.parse_args()
 
     width, height, ss, fps = cfg.WIDTH, cfg.HEIGHT, cfg.SUPERSAMPLE, cfg.FPS
+    if args.format != "config":
+        num, den = (4, 5) if args.format == "4x5" else (9, 16)
+        height = width * den // num
+    tag = "" if args.format == "config" else f"_{args.format}"
+    if tag == "_4x5" and (width, height) == (cfg.WIDTH, cfg.HEIGHT):
+        tag = ""                                   # the default format keeps the plain name
     if args.preview:
         width, height, ss, fps = width // 2, height // 2, 2, 15
     cfg.OUT.mkdir(exist_ok=True)
@@ -409,7 +419,7 @@ def main():
 
     sc = Scene()
     n_frames = int(round(sc.timeline.t_end * fps))
-    frames_dir = cfg.OUT / ("frames_preview" if args.preview else "frames")
+    frames_dir = cfg.OUT / (("frames_preview" if args.preview else "frames") + tag)
     shutil.rmtree(frames_dir, ignore_errors=True)
     frames_dir.mkdir(parents=True)
     jobs = max(1, args.jobs)
@@ -427,12 +437,12 @@ def main():
                 _worker, [(width, height, ss, fps, c, frames_dir) for c in chunks]):
             done += k
             print(f"  {done}/{n_frames} frames  ({time.time() - t0:.0f}s)", flush=True)
-    out = args.out or cfg.OUT / ("la_paz_el_alto_growth_preview.mp4" if args.preview
-                                 else "la_paz_el_alto_growth.mp4")
+    out = args.out or cfg.OUT / (f"la_paz_el_alto_growth{tag}_preview.mp4" if args.preview
+                                 else f"la_paz_el_alto_growth{tag}.mp4")
     encode(frames_dir, out, fps, cfg.CRF)
     last = frames_dir / f"f_{n_frames - 1:05d}.png"
     if not args.preview:
-        shutil.copy(last, cfg.OUT / "poster.png")
+        shutil.copy(last, cfg.OUT / f"poster{tag}.png")
     if not args.keep_frames:
         shutil.rmtree(frames_dir, ignore_errors=True)
     print(f"{out}  ({out.stat().st_size / 1e6:.1f} MB, {time.time() - t0:.0f}s)")
