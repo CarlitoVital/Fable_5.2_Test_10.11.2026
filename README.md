@@ -33,31 +33,76 @@ from El Alto to Zona Sur.
 
 ## Run it
 
+Works on Windows, macOS and Linux. You need **Python 3.10 – 3.13** (tested with 3.13),
+**ffmpeg** and **git**,
+about 5 GB of free disk (frames are written to disk before encoding) and 8 GB of RAM
+for the default four parallel jobs. No GPU, no accounts, no API keys.
+
+**1. Install the tools** (once; open a new terminal afterwards)
+
+| | |
+|---|---|
+| Windows (PowerShell) | `winget install Python.Python.3.12`, then `winget install Gyan.FFmpeg`, then `winget install Git.Git` |
+| macOS ([Homebrew](https://brew.sh)) | `brew install python@3.12 ffmpeg git` |
+| Linux (Debian/Ubuntu) | `sudo apt install python3 python3-venv ffmpeg git` |
+
+**2. Get the code** (or download the ZIP from the branch page on GitHub)
+
 ```bash
-python -m venv .venv && . .venv/bin/activate
+git clone -b claude/admiring-faraday-q4dq4t https://github.com/CarlitoVital/Fable_5.2_Test_10.11.2026.git
+cd Fable_5.2_Test_10.11.2026
+```
+
+**3. Create the Python environment** (once)
+
+macOS / Linux (with Homebrew's Python on macOS, write `python3.12` instead of `python3`):
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
 pip install -r requirements.txt
 ```
+
+Windows (PowerShell):
+
+```powershell
+py -3.12 -m venv .venv
+.venv\Scripts\Activate.ps1
+pip install -r requirements.txt
+```
+
+If PowerShell refuses to run `Activate.ps1`, allow local scripts once with
+`Set-ExecutionPolicy -Scope CurrentUser RemoteSigned`. In every new terminal, activate the
+environment again (`source .venv/bin/activate` or `.venv\Scripts\Activate.ps1`) before
+the commands below.
+
+**4. Download and prepare the data** (once: about 360 MB and three minutes)
 
 ```bash
 python -m pipeline
 ```
 
+`python -m pipeline.validate` then prints the checks described under [Checks](#checks).
+
+**5. Render**
+
 ```bash
-python -m pipeline.validate
+python -m render.animate --year 2005
 ```
+
+writes one still to `out/` to check the look; the very first run spends about half a
+minute compiling the renderer.
 
 ```bash
 python -m render.animate
 ```
 
-The pipeline downloads about 360 MB and takes roughly three minutes. Rendering takes about
-ten minutes on four CPU cores; **no GPU is needed** (see [Why a software renderer](#why-a-software-renderer)).
-`ffmpeg` must be on the path.
-
-Useful while tuning: `python -m render.animate --year 2005` (one still),
-`--still 12.5` (a still at 12.5 s), `--preview` (half-size draft in under a minute),
-`--format 9x16` (the full-screen Reels version).
-`python -m pytest` runs the unit tests of the dating rules and the rasteriser.
+renders the film: `out/la_paz_el_alto_growth.mp4` and `out/poster.png`, in about ten
+minutes on four cores. `--format 9x16` makes the Reels version, `--preview` a half-size
+draft in about a minute, `--still 12.5` a single frame at 12.5 s, and `--jobs 2` uses
+less memory on smaller machines. Texts, colours, camera and your name live in
+[`render/config.py`](render/config.py): edit, then render again — the data step does not
+need to be repeated. `python -m pytest` runs the unit tests.
 
 Hosts the pipeline talks to, for sandboxes with an allow-list:
 `overturemaps-us-west-2.s3.amazonaws.com`, `download.geoservice.dlr.de`,

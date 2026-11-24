@@ -18,6 +18,7 @@ import math
 import multiprocessing as mp
 import shutil
 import subprocess
+import sys
 import time
 from pathlib import Path
 
@@ -363,6 +364,12 @@ def frame(sc, rd, ov, tau):
                      ov.frame(**overlay_state(sc, tau), labels=label_state(sc, rd, tau)))
 
 
+def start_method() -> str:
+    """How worker processes are started: "fork" on Linux (fast, shares the loaded
+    scene), "spawn" elsewhere - Windows has no fork, and on macOS it is unsafe."""
+    return "fork" if sys.platform.startswith("linux") else "spawn"
+
+
 def _worker(job):
     width, height, ss, fps, frames, out_dir = job
     sc, rd, ov = make(width, height, ss)
@@ -431,7 +438,7 @@ def main():
     rd.render(0.0)
     del rd
     t0 = time.time()
-    with mp.get_context("fork").Pool(jobs) as pool:
+    with mp.get_context(start_method()).Pool(jobs) as pool:
         done = 0
         for k in pool.imap_unordered(
                 _worker, [(width, height, ss, fps, c, frames_dir) for c in chunks]):
